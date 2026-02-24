@@ -4,12 +4,12 @@ import json
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi import HTTPException
+from fastapi import FastAPI, Request  # type: ignore
+from pydantic import BaseModel  # type: ignore
+from fastapi.responses import HTMLResponse, JSONResponse  # type: ignore
+from fastapi.staticfiles import StaticFiles  # type: ignore
+from fastapi.templating import Jinja2Templates  # type: ignore
+from fastapi import HTTPException  # type: ignore
 import hashlib
 
 DB_FILE = "sura.db"
@@ -417,21 +417,21 @@ def handle_response(decision: str, requestId: int, request: Request):
         history = json.loads(req["history"])
         contacted_names = [ev["event"].split(" ")[4] for ev in history if "Email sent to NGO" in ev["event"]]
         
-        next_ngo = None
+        next_ngo_data = {}
         for n in next_ngos:
             if n["name"] not in contacted_names:
-                next_ngo = n
+                next_ngo_data = dict(n)
                 break
                 
-        if next_ngo:
-            cursor.execute("UPDATE requests SET status = 'Waiting for Response', ngoAssigned = ? WHERE id = ?", (next_ngo["name"], requestId))
+        if next_ngo_data:
+            cursor.execute("UPDATE requests SET status = 'Waiting for Response', ngoAssigned = ? WHERE id = ?", (next_ngo_data["name"], requestId))
             conn.commit()
             
             email_html = f"""
             <div style="font-family: Arial, sans-serif; padding: 20px; background: #f3f4f6;">
                 <div style="max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px;">
                     <h2 style="color: #16a34a;"> SURA Connect - New Donation Request</h2>
-                    <p>Hello <b>{next_ngo['name']}</b>,</p>
+                    <p>Hello <b>{next_ngo_data['name']}</b>,</p>
                     <p>A food donation request is available for pickup near you (Forwarded due to previous decline).</p>
                     <p><b>Restaurant:</b> {req['restaurant']}</p>
                     <p><b>Location:</b> {req['location']}</p>
@@ -445,11 +445,11 @@ def handle_response(decision: str, requestId: int, request: Request):
                 </div>
             </div>
             """
-            send_real_email(next_ngo["email"], "New Food Donation Request - Please Respond", email_html)
+            send_real_email(next_ngo_data["email"], "New Food Donation Request - Please Respond", email_html)
             
-            log_event(requestId, f"Request DECLINED by {current_ngo}. Forwarding to {next_ngo['name']}.", conn)
-            log_event(requestId, f"Email sent to NGO {next_ngo['name']} requesting pickup.", conn)
-            msg = f"Declined. Forwarded to {next_ngo['name']}."
+            log_event(requestId, f"Request DECLINED by {current_ngo}. Forwarding to {next_ngo_data['name']}.", conn)
+            log_event(requestId, f"Email sent to NGO {next_ngo_data['name']} requesting pickup.", conn)
+            msg = f"Declined. Forwarded to {next_ngo_data['name']}."
         else:
             cursor.execute("UPDATE requests SET status = 'Declined - No NGOs left' WHERE id = ?", (requestId,))
             conn.commit()
