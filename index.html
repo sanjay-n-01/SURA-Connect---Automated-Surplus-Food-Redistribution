@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SURA Connect - Automated Surplus Food Redistribution</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .neon-text {
+      text-shadow: 0 0 10px rgba(16, 185, 129, 0.5), 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .animate-enter {
+      animation: enter 0.4s ease-out;
+    }
+
+    @keyframes enter {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { primary: '#10b981', secondary: '#3b82f6', dark: '#0f172a' }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-gray-900 to-black overflow-x-hidden">
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [requests, setRequests] = useState([]);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [showAdminPanel, setShowAdminPanel] = useState(false);
+      const [loading, setLoading] = useState(false);
+
+      // Auth State
+      const [isLoginView, setIsLoginView] = useState(true);
+      const [authError, setAuthError] = useState("");
+      const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+      const [regForm, setRegForm] = useState({ name: "", location: "", email: "", contact: "", password: "" });
+
+      // Donation Form State
+      const [form, setForm] = useState({
+        restaurant: '',
+        contact: '',
+        location: '',
+        foodType: '',
+        quantity: 50,
+        expiry: 'Today 8 PM',
+        email: '',
+        notes: 'Please bring your own containers'
+      });
+
+      const fetchRequests = async () => {
+        const res = await fetch('/api/donations');
+        const data = await res.json();
+        setRequests(data);
+      };
+
+      useEffect(() => {
+        fetchRequests();
+      }, []);
+
+      const handleAuthLogin = async (e) => {
+        e.preventDefault();
+        setAuthError("");
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginForm)
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setCurrentUser(data);
+            setForm({
+              ...form, restaurant: data.name, contact: data.contact, location: data.location, email: data.email
+            });
+          } else {
+            setAuthError(data.detail || "Invalid login credentials.");
+          }
+        } catch (err) {
+          setAuthError("Could not connect to server.");
+        }
+      };
+
+      const handleAuthRegister = async (e) => {
+        e.preventDefault();
+        setAuthError("");
+        try {
+          const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(regForm)
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setCurrentUser(data);
+            setForm({
+              ...form, restaurant: data.name, contact: data.contact, location: data.location, email: data.email
+            });
+          } else {
+            setAuthError(data.detail || "Registration failed.");
+          }
+        } catch (err) {
+          setAuthError("Could not connect to server.");
+        }
+      };
+
+      const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        await fetch('/api/donations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form)
+        });
+        setLoading(false);
+        fetchRequests();
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        setShowAdminPanel(false);
+        setLoginForm({ email: "", password: "" });
+        setRegForm({ name: "", location: "", email: "", contact: "", password: "" });
+        setAuthError("");
+        setForm({
+          restaurant: '', contact: '', location: '', foodType: '', quantity: 50, expiry: 'Today 8 PM', email: '', notes: 'Please bring your own containers'
+        });
+      };
+
+      const handleDecision = async (reqId, decision) => {
+        try {
+          await fetch(`/api/respond?decision=${decision}&requestId=${reqId}`);
+          fetchRequests(); // Refresh list to show change
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="glass max-w-md w-full rounded-3xl p-8 shadow-2xl relative overflow-hidden animate-enter">
+              <div className="absolute top-[-50px] right-[-50px] w-32 h-32 bg-primary rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+              <div className="absolute bottom-[-50px] left-[-50px] w-32 h-32 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+
+              <div className="text-center mb-8 relative z-10">
+                <h1 className="text-4xl font-bold mb-2 neon-text text-primary">🍲 SURA</h1>
+                <p className="text-gray-400 font-medium">Restaurant Portal</p>
+              </div>
+
+              <div className="relative z-10 animate-fade-in">
+
+                {/* Auth Toggle */}
+                <div className="flex rounded-lg bg-gray-800/50 p-1 mb-6 border border-gray-700">
+                  <button onClick={() => { setIsLoginView(true); setAuthError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition ${isLoginView ? 'bg-primary text-white shadow' : 'text-gray-400 hover:text-white'}`}>Log In</button>
+                  <button onClick={() => { setIsLoginView(false); setAuthError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition ${!isLoginView ? 'bg-primary text-white shadow' : 'text-gray-400 hover:text-white'}`}>Sign Up</button>
+                </div>
+
+                {authError && (
+                  <div className="mb-4 p-3 rounded-lg bg-red-900/50 border border-red-500/50 text-red-200 text-sm text-center">
+                    {authError}
+                  </div>
+                )}
+
+                {isLoginView ? (
+                  <form onSubmit={handleAuthLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Email Address</label>
+                      <input type="email" required value={loginForm.email} onChange={e => setLoginForm({ ...loginForm, email: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-3 text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="restaurant@example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Password</label>
+                      <input type="password" required value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-3 text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" placeholder="••••••••" />
+                    </div>
+                    <button type="submit" className="w-full mt-2 bg-gradient-to-r from-primary to-green-600 hover:from-green-400 hover:to-primary text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition active:scale-95">
+                      Secure Login 🔐
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleAuthRegister} className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Restaurant Name</label>
+                      <input type="text" required value={regForm.name} onChange={e => setRegForm({ ...regForm, name: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-primary transition" placeholder="Sweet & Salty Bakery" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">Location / Ward</label>
+                        <input type="text" required value={regForm.location} onChange={e => setRegForm({ ...regForm, location: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-primary transition" placeholder="Tambaram" />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-1">Phone Number</label>
+                        <input type="tel" required value={regForm.contact} onChange={e => setRegForm({ ...regForm, contact: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-primary transition" placeholder="555-1234" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Email Address</label>
+                      <input type="email" required value={regForm.email} onChange={e => setRegForm({ ...regForm, email: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-primary transition" placeholder="restaurant@example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Create Password</label>
+                      <input type="password" required value={regForm.password} onChange={e => setRegForm({ ...regForm, password: e.target.value })} className="w-full bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2 text-white outline-none focus:border-primary transition" placeholder="••••••••" />
+                    </div>
+                    <button type="submit" className="w-full mt-2 bg-gradient-to-r from-blue-600 to-primary hover:from-blue-500 hover:to-green-400 text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition active:scale-95">
+                      Register & Join Network 🚀
+                    </button>
+                  </form>
+                )}
+
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Filter requests to only show the CURRENT logged in restaurant's requests (or all if admin)
+      const displayRequests = showAdminPanel ? requests : requests.filter(r => r.restaurant === currentUser.name);
+
+      return (
+        <div className="container mx-auto px-4 py-8 mb-20 max-w-7xl animate-enter">
+          {/* Header */}
+          <header className="mb-12 flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold mb-1 neon-text text-primary flex items-center gap-3">
+                🍲 SURA Connect
+              </h1>
+              <p className="text-gray-400 text-sm">Automated Food Redistribution Network</p>
+            </div>
+            <div className="flex flex-col items-end">
+              <p className="text-white font-bold bg-gray-800 px-4 py-1 rounded-full text-sm border border-gray-700">👤 {currentUser.name}</p>
+              <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 mt-2 hover:underline">Log Out</button>
+            </div>
+          </header>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Left Col: Request Form */}
+            <div className="lg:col-span-4">
+              <div className="glass rounded-3xl p-8 sticky top-8">
+                <h2 className="text-2xl font-bold text-white mb-6 border-b border-gray-700 pb-4">
+                  Register Surplus Food
+                </h2>
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Restaurant Name</label>
+                      <input required name="restaurant" value={form.restaurant} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Location</label>
+                      <input required name="location" value={form.location} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Food Type</label>
+                    <input required name="foodType" value={form.foodType} onChange={handleChange}
+                      className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Expiry</label>
+                      <input required name="expiry" value={form.expiry} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Contact Details</label>
+                      <input required name="contact" value={form.contact} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Email for Notifications</label>
+                    <input required type="email" name="email" value={form.email} onChange={handleChange}
+                      className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-primary" />
+                  </div>
+
+                  <button disabled={loading} type="submit"
+                    className="w-full mt-4 bg-gradient-to-r from-primary to-green-600 hover:from-green-400 hover:to-primary text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition active:scale-95 disabled:opacity-50">
+                    {loading ? 'Submitting...' : 'Initiate Match 🚀'}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right Col: Dashboard & Logs */}
+            <div className="lg:col-span-8 flex flex-col gap-6">
+              <h2 className="text-2xl font-semibold text-white border-b border-gray-700 pb-3 flex flex-col">
+                {showAdminPanel ? 'NGO Simulator & System Logs' : 'Your Donation History'}
+                {showAdminPanel && (
+                  <span className="text-sm font-normal text-yellow-500 mt-1 flex items-center gap-2">
+                    ⚠️ ADMIN ONLY: The actions here simulate what the NGO receives in their email.
+                  </span>
+                )}
+              </h2>
+
+              {displayRequests.length === 0 ? (
+                <div className="glass rounded-2xl p-10 text-center text-gray-400 flex flex-col items-center justify-center min-h-[400px]">
+                  <div className="text-6xl mb-6 opacity-50">
+                    📭
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-2 text-white">
+                    No Active Requests
+                  </h3>
+                  <p className="max-w-md mx-auto">
+                    You haven't submitted any surplus donation requests recently. You can share food using the form on the left!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {displayRequests.map((req) => (
+                    <div key={req.id} className="glass rounded-2xl p-5 relative overflow-hidden flex flex-col sm:flex-row gap-6">
+
+                      {/* Info Panel */}
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-xl font-bold text-white">{req.restaurant}</h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${req.status.includes('Accepted') ? 'bg-green-900 text-primary' :
+                            req.status.includes('Declined') ? 'bg-red-900 text-red-400' :
+                              'bg-yellow-900 text-yellow-500'
+                            }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300 mb-4">
+                          📍 {req.location} &nbsp; • &nbsp; 🍲 {req.foodType} ({req.quantity} meals)
+                        </p>
+
+                        {/* Webhook Action Buttons (Simulating NGO clicking email links) ONLY SHOWN IN ADMIN PANEL */}
+                        {showAdminPanel && req.status === 'Waiting for Response' && (
+                          <div className="mt-4 p-4 border border-blue-900/50 bg-blue-900/10 rounded-xl relative">
+                            <div className="absolute top-0 right-0 bg-blue-600 text-white text-[10px] uppercase font-bold px-2 py-1 rounded-bl-lg rounded-tr-xl">
+                              Simulated Email Inbox
+                            </div>
+                            <p className="text-sm text-blue-200 mb-3">
+                              📩 <b>Email Sent to:</b> {req.ngoAssigned} NGO
+                            </p>
+                            <p className="text-xs text-blue-300 mb-3">If you are the NGO, please respond by clicking the links below:</p>
+                            <div className="flex gap-3">
+                              <a href={`http://127.0.0.1:8006/api/respond?decision=accept&requestId=${req.id}`} target="_blank"
+                                className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition text-center block" onClick={(e) => { e.preventDefault(); handleDecision(req.id, 'accept'); }}>
+                                ✅ Accept Pickup
+                              </a>
+                              <a href={`http://127.0.0.1:8006/api/respond?decision=decline&requestId=${req.id}`} target="_blank"
+                                className="bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition text-center block" onClick={(e) => { e.preventDefault(); handleDecision(req.id, 'decline'); }}>
+                                ❌ Decline
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Logs Panel (Right visualizer) ONLY SHOWN IN ADMIN PANEL */}
+                      {showAdminPanel && (
+                        <div className="flex-1 bg-black/40 rounded-xl p-4 border border-gray-800 overflow-y-auto max-h-60 custom-scrollbar">
+                          <h4 className="text-xs uppercase text-gray-500 font-bold mb-3 tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                            Automation Log
+                          </h4>
+                          <ul className="space-y-3">
+                            {req.history && req.history.map((log, i) => (
+                              <li key={i} className="text-sm text-gray-300 font-mono text-xs border-l-2 border-primary pl-3 py-1">
+                                <span className="text-gray-500 mr-2">[{new Date(log.time).toLocaleTimeString()}]</span>
+                                {log.event}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Discreet Developer Toggle Button */}
+          <div className="fixed bottom-4 right-4 z-50 py-2">
+            <button
+              onClick={() => setShowAdminPanel(!showAdminPanel)}
+              className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-3 py-1 rounded-full text-[10px] font-mono border border-gray-700 transition opacity-20 hover:opacity-100"
+            >
+              {showAdminPanel ? 'Disable Admin Dev Panel' : 'Enable Admin Dev Panel'}
+            </button>
+          </div>
+
+        </div>
+      );
+    }
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+
+</html>
