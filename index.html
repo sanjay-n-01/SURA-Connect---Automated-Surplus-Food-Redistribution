@@ -376,11 +376,11 @@
                             </p>
                             <p className="text-xs text-blue-300 mb-3">If you are the NGO, please respond by clicking the links below:</p>
                             <div className="flex gap-3">
-                              <a href={`http://127.0.0.1:8006/api/respond?decision=accept&requestId=${req.id}`} target="_blank"
+                              <a href={`/api/respond?decision=accept&requestId=${req.id}`} target="_blank"
                                 className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition text-center block" onClick={(e) => { e.preventDefault(); handleDecision(req.id, 'accept'); }}>
                                 ✅ Accept Pickup
                               </a>
-                              <a href={`http://127.0.0.1:8006/api/respond?decision=decline&requestId=${req.id}`} target="_blank"
+                              <a href={`/api/respond?decision=decline&requestId=${req.id}`} target="_blank"
                                 className="bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition text-center block" onClick={(e) => { e.preventDefault(); handleDecision(req.id, 'decline'); }}>
                                 ❌ Decline
                               </a>

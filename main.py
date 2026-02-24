@@ -151,7 +151,8 @@ def log_event(req_id, event, conn):
         conn.commit()
 
 @app.post("/api/donations")
-def create_donation(req: DonationRequest):
+def create_donation(req: DonationRequest, request: Request):
+    base_url = str(request.base_url).rstrip("/")
     conn = get_db()
     cursor = conn.cursor()
     
@@ -237,9 +238,9 @@ def create_donation(req: DonationRequest):
                 </table>
                 <p>Please confirm your decision:</p>
                 <div style="margin-top: 20px;">
-                    <a href="http://127.0.0.1:8006/api/respond?decision=accept&requestId={req_id}" 
+                    <a href="{base_url}/api/respond?decision=accept&requestId={req_id}" 
                        style="background: #16a34a; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-right: 10px;">✅ Accept Pickup</a>
-                    <a href="http://127.0.0.1:8006/api/respond?decision=decline&requestId={req_id}" 
+                    <a href="{base_url}/api/respond?decision=decline&requestId={req_id}" 
                        style="background: #dc2626; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">❌ Decline</a>
                 </div>
             </div>
@@ -340,7 +341,8 @@ def list_donations():
     return rows
 
 @app.get("/api/respond")
-def handle_response(decision: str, requestId: int):
+def handle_response(decision: str, requestId: int, request: Request):
+    base_url = str(request.base_url).rstrip("/")
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM requests WHERE id = ?", (requestId,))
@@ -435,9 +437,9 @@ def handle_response(decision: str, requestId: int):
                     <p><b>Location:</b> {req['location']}</p>
                     <p><b>Quantity:</b> {req['quantity']} meals</p>
                     <div style="margin-top: 20px;">
-                        <a href="http://127.0.0.1:8003/api/respond?decision=accept&requestId={requestId}" 
+                        <a href="{base_url}/api/respond?decision=accept&requestId={requestId}" 
                            style="background: #16a34a; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-right: 10px;">✅ Accept Pickup</a>
-                        <a href="http://127.0.0.1:8003/api/respond?decision=decline&requestId={requestId}" 
+                        <a href="{base_url}/api/respond?decision=decline&requestId={requestId}" 
                            style="background: #dc2626; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">❌ Decline</a>
                     </div>
                 </div>
@@ -478,7 +480,7 @@ def handle_response(decision: str, requestId: int):
             <h1>Action Recorded successfully!</h1>
             <p>{msg}</p>
             <p>You can now safely close this window.</p>
-            <a href="http://127.0.0.1:8001" class="btn">View Live Dashboard</a>
+            <a href="{base_url}" class="btn">View Live Dashboard</a>
         </div>
     </body>
     </html>
