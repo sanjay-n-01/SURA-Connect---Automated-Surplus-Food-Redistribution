@@ -253,6 +253,17 @@ def create_donation(req: DonationRequest, request: Request, background_tasks: Ba
         email_content = f"Mock Email to {ngo['name']} ({ngo['email']}): New Request from {req.restaurant} for {req.quantity} meals. [Accept] or [Decline]"
         log_event(req_id, f"Email sent to NGO {ngo['name']} requesting pickup.", conn)
         status_msg = f"Request saved. Contacted NGO: {ngo['name']}"
+        
+        # Also send a quick confirmation to the donor
+        donor_html = f"""
+        <html><body>
+        <h3>Thank you for submitting a donation!</h3>
+        <p>We have received your request to donate {req.quantity} meals of {req.foodType}.</p>
+        <p>We have contacted the NGO: <b>{ngo['name']}</b>. You will be notified when they accept it.</p>
+        </body></html>
+        """
+        background_tasks.add_task(send_real_email, req.email, "Donation Request Received - SURA Connect", donor_html)
+        
     else:
         cursor.execute("UPDATE requests SET status = 'No NGO Available' WHERE id = ?", (req_id,))
         conn.commit()
