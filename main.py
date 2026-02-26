@@ -4,7 +4,7 @@ import json
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
-from fastapi import FastAPI, Request  # type: ignore
+from fastapi import FastAPI, Request, BackgroundTasks  # type: ignore
 from pydantic import BaseModel  # type: ignore
 from fastapi.responses import HTMLResponse, JSONResponse  # type: ignore
 from fastapi.staticfiles import StaticFiles  # type: ignore
@@ -14,7 +14,7 @@ import hashlib
 
 DB_FILE = "sura.db"
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
+SMTP_PORT = 587
 # Set these as environment variables or update them directly to test!
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "san01aug@gmail.com")
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD", "ebad pzks oixl uadc")
@@ -31,7 +31,9 @@ def send_real_email(to_email, subject, body_html):
         msg.set_content("Please enable HTML to view this message.")
         msg.add_alternative(body_html, subtype='html')
 
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.set_debuglevel(0)
+            server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
         print(f"Real email sent successfully to {to_email}")
@@ -151,7 +153,7 @@ def log_event(req_id, event, conn):
         conn.commit()
 
 @app.post("/api/donations")
-def create_donation(req: DonationRequest, request: Request):
+def create_donation(req: DonationRequest, request: Request, background_tasks: BackgroundTasks):
     base_url = str(request.base_url).rstrip("/")
     conn = get_db()
     cursor = conn.cursor()
@@ -247,7 +249,7 @@ def create_donation(req: DonationRequest, request: Request):
         </div>
         """
         
-        send_real_email(ngo["email"], "New Food Donation Request Assigned", email_html)
+        background_tasks.add_task(send_real_email, ngo["email"], "New Food Donation Request Assigned", email_html)
         email_content = f"Mock Email to {ngo['name']} ({ngo['email']}): New Request from {req.restaurant} for {req.quantity} meals. [Accept] or [Decline]"
         log_event(req_id, f"Email sent to NGO {ngo['name']} requesting pickup.", conn)
         status_msg = f"Request saved. Contacted NGO: {ngo['name']}"
@@ -341,7 +343,7 @@ def list_donations():
     return rows
 
 @app.get("/api/respond")
-def handle_response(decision: str, requestId: int, request: Request):
+def handle_response(decision: str, requestId: int, request: Request, background_tasks: BackgroundTasks):
     base_url = str(request.base_url).rstrip("/")
     conn = get_db()
     cursor = conn.cursor()
@@ -402,7 +404,7 @@ def handle_response(decision: str, requestId: int, request: Request):
         </body>
         </html>
         """
-        send_real_email(req["email"], f"Update on your Food Donation Request : {requestId}", email_html)
+        background_tasks.add_task(send_real_email, req["email"], f"Update on your Food Donation Request : {requestId}", email_html)
         
         log_event(requestId, f"Request ACCEPTED by NGO {current_ngo}.", conn)
         log_event(requestId, f"Email sent to Donor ({req['email']}) with pickup confirmation.", conn)
@@ -445,7 +447,7 @@ def handle_response(decision: str, requestId: int, request: Request):
                 </div>
             </div>
             """
-            send_real_email(next_ngo_data["email"], "New Food Donation Request - Please Respond", email_html)
+            background_tasks.add_task(send_real_email, next_ngo_data["email"], "New Food Donation Request - Please Respond", email_html)
             
             log_event(requestId, f"Request DECLINED by {current_ngo}. Forwarding to {next_ngo_data['name']}.", conn)
             log_event(requestId, f"Email sent to NGO {next_ngo_data['name']} requesting pickup.", conn)
