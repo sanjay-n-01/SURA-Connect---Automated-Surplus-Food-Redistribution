@@ -50,8 +50,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             location TEXT NOT NULL,
-            email TEXT NOT NULL,
-            contact TEXT NOT NULL
+            email TEXT UNIQUE NOT NULL,
+            contact TEXT NOT NULL,
+            password TEXT NOT NULL
         )
     """)
     cursor.execute("""
@@ -71,6 +72,21 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ngo_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ngo_name TEXT NOT NULL,
+            ngo_email TEXT NOT NULL,
+            location TEXT NOT NULL,
+            food_type_needed TEXT NOT NULL,
+            quantity_needed INTEGER NOT NULL,
+            urgency TEXT NOT NULL,
+            status TEXT DEFAULT 'Pending',
+            restaurant_assigned TEXT DEFAULT 'Not yet Assigned',
+            history TEXT DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     cursor.execute("DROP TABLE IF EXISTS restaurants")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS restaurants (
@@ -86,14 +102,15 @@ def init_db():
     # Seed NGOs if empty
     cursor.execute("SELECT COUNT(*) FROM ngos")
     if cursor.fetchone()[0] == 0:
+        default_pwd = hash_psw("password123") # Default password for seeded NGOs
         ngos_data = [
-            ("Helping Hands", "Tambaram", "sanjayn10827@gmail.com", "9876543210"),
-            ("Smile Foundation", "Pallavaram", "sanjayeshwaran33@gmail.com", "9554862315"),
-            ("Food for all", "Gundiy", "kaviyasanjay2017@gmail.com", "8777564354"),
-            ("Hope Home", "Tambaram", "mathesh.4119@gmail.com", "6655884426"),
-            ("Care & Share", "Tambaram", "v.k.sunanda12@gmail.com", "7765894159"),
+            ("Helping Hands", "Tambaram", "sanjayn10827@gmail.com", "9876543210", default_pwd),
+            ("Smile Foundation", "Pallavaram", "sanjayeshwaran33@gmail.com", "9554862315", default_pwd),
+            ("Food for all", "Gundiy", "kaviyasanjay2017@gmail.com", "8777564354", default_pwd),
+            ("Hope Home", "Tambaram", "mathesh.4119@gmail.com", "6655884426", default_pwd),
+            ("Care & Share", "Tambaram", "v.k.sunanda12@gmail.com", "7765894159", default_pwd),
         ]
-        cursor.executemany("INSERT INTO ngos (name, location, email, contact) VALUES (?, ?, ?, ?)", ngos_data)
+        cursor.executemany("INSERT INTO ngos (name, location, email, contact, password) VALUES (?, ?, ?, ?, ?)", ngos_data)
         
     conn.commit()
     conn.close()
@@ -119,7 +136,18 @@ class RegisterRequest(BaseModel):
     contact: str
     password: str
 
+class RegisterNGORequest(BaseModel):
+    name: str
+    location: str
+    email: str
+    contact: str
+    password: str
+
 class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginNGORequest(BaseModel):
     email: str
     password: str
 
@@ -142,14 +170,22 @@ class DonationRequest(BaseModel):
     email: str
     notes: str = ""
 
-def log_event(req_id, event, conn):
+class NGOFoodRequest(BaseModel):
+    ngo_name: str
+    ngo_email: str
+    location: str
+    food_type_needed: str
+    quantity_needed: int
+    urgency: str
+
+def log_event(req_id, event, conn, table="requests"):
     cursor = conn.cursor()
-    cursor.execute("SELECT history FROM requests WHERE id = ?", (req_id,))
+    cursor.execute(f"SELECT history FROM {table} WHERE id = ?", (req_id,))
     row = cursor.fetchone()
     if row:
         history = json.loads(row["history"])
         history.append({"time": datetime.now().isoformat(), "event": event})
-        cursor.execute("UPDATE requests SET history = ? WHERE id = ?", (json.dumps(history), req_id))
+        cursor.execute(f"UPDATE {table} SET history = ? WHERE id = ?", (json.dumps(history), req_id))
         conn.commit()
 
 @app.post("/api/donations")
@@ -333,6 +369,53 @@ def login_restaurant(req: LoginRequest):
         "role": "restaurant"
     }
 
+@app.post("/api/register/ngo")
+def register_ngo(req: RegisterNGORequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        # Check if email exists
+        cursor.execute("SELECT id FROM ngos WHERE email = ?", (req.email,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Email already registered")
+            
+        hashed_password = hash_psw(req.password)
+        cursor.execute(
+            "INSERT INTO ngos (name, location, email, contact, password) VALUES (?, ?, ?, ?, ?)",
+            (req.name, req.location, req.email, req.contact, hashed_password)
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+        return {"id": user_id, "name": req.name, "location": req.location, "email": req.email, "contact": req.contact, "role": "ngo"}
+    finally:
+        conn.close()
+
+@app.post("/api/login/ngo")
+def login_ngo(req: LoginNGORequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ngos WHERE email = ?", (req.email,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    user_dict = dict(user)
+    if not verify_psw(req.password, user_dict["password"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+    # Return user details without password
+    return {
+        "id": user_dict["id"],
+        "name": user_dict["name"],
+        "location": user_dict["location"],
+        "email": user_dict["email"],
+        "contact": user_dict["contact"],
+        "role": "ngo"
+    }
+
+
 @app.get("/api/ngos")
 def list_ngos():
     conn = get_db()
@@ -352,6 +435,190 @@ def list_donations():
     for row in rows:
         row["history"] = json.loads(row["history"])
     return rows
+
+@app.post("/api/ngo-requests")
+def create_ngo_request(req: NGOFoodRequest, request: Request, background_tasks: BackgroundTasks):
+    base_url = str(request.base_url).rstrip("/")
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 1. Save initial request (status: Pending)
+    cursor.execute("""
+        INSERT INTO ngo_requests 
+        (ngo_name, ngo_email, location, food_type_needed, quantity_needed, urgency)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (req.ngo_name, req.ngo_email, req.location, req.food_type_needed, req.quantity_needed, req.urgency))
+    req_id = cursor.lastrowid
+    conn.commit()
+    
+    # 2. Find matching restaurants by location
+    cursor.execute("SELECT * FROM restaurants WHERE location = ?", (req.location,))
+    restaurants = cursor.fetchall()
+    
+    if restaurants:
+        email_count = 0
+        for r_row in restaurants:
+            restaurant = dict(r_row)
+            
+            # Build HTML Email for restaurants
+            email_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
+                <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 3px solid #3b82f6;">
+                    <h1 style="color: #3b82f6; margin: 0;">🍲 SURA Connect</h1>
+                    <p style="margin: 5px 0 0; color: #64748b;">NGO Food Request Alert</p>
+                </div>
+                
+                <div style="padding: 30px;">
+                    <h2 style="margin-top: 0; color: #0f172a;">New Food Request in Your Area</h2>
+                    <p>Hello {restaurant['name']},</p>
+                    <p>An NGO ({req.ngo_name}) in your location ({req.location}) is currently in urgent need of surplus food.</p>
+                    
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px; background: #f1f5f9; border-radius: 8px; overflow: hidden;">
+                        <tr>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; width: 35%;">Requesting NGO</td>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">{req.ngo_name}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Food Needed</td>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">{req.food_type_needed}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Quantity</td>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">{req.quantity_needed} meals</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Urgency</td>
+                            <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #dc2626; font-weight: bold;">{req.urgency}</td>
+                        </tr>
+                    </table>
+                    <p>If you have surplus food available, you can accept this request to initiate contact and coordinate a pickup.</p>
+                    <div style="margin-top: 20px;">
+                        <a href="{base_url}/api/fulfill-request?decision=accept&requestId={req_id}&restaurantId={restaurant['id']}" 
+                           style="background: #3b82f6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">✅ Fulfill Request</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            background_tasks.add_task(send_real_email, restaurant["email"], f"NGO Food Request: {req.ngo_name} needs {req.quantity_needed} meals", email_html)
+            email_count += 1
+            
+        cursor.execute("UPDATE ngo_requests SET status = 'Broadcasted' WHERE id = ?", (req_id,))
+        conn.commit()
+        log_event(req_id, f"Broadcasted to {email_count} restaurants in {req.location}.", conn, table="ngo_requests")
+        status_msg = f"Request broadcasted successfully to {email_count} local restaurants."
+        
+    else:
+        cursor.execute("UPDATE ngo_requests SET status = 'No Restaurants Available' WHERE id = ?", (req_id,))
+        conn.commit()
+        log_event(req_id, f"No registered restaurants found in {req.location}.", conn, table="ngo_requests")
+        status_msg = "Request saved, but no restaurants are currently registered in your area."
+
+    cursor.execute("SELECT * FROM ngo_requests WHERE id = ?", (req_id,))
+    new_req = dict(cursor.fetchone())
+    conn.close()
+    
+    return {"message": status_msg, "request": new_req}
+
+@app.get("/api/ngo-requests")
+def list_ngo_requests():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ngo_requests ORDER BY id DESC")
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    for row in rows:
+        row["history"] = json.loads(row["history"])
+    return rows
+
+@app.get("/api/fulfill-request")
+def fulfill_ngo_request(decision: str, requestId: int, restaurantId: int, request: Request, background_tasks: BackgroundTasks):
+    base_url = str(request.base_url).rstrip("/")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ngo_requests WHERE id = ?", (requestId,))
+    req = cursor.fetchone()
+    
+    if not req:
+        return HTMLResponse(content="<h1>Request not found</h1>")
+        
+    if req["status"] in ["Accepted"]:
+        # Tell this restaurant it's already fulfilled
+        return HTMLResponse(content="<h1>This request has already been fulfilled by another restaurant. Thanks anyway!</h1>")
+        
+    if decision == "accept":
+        cursor.execute("SELECT name, email, contact FROM restaurants WHERE id = ?", (restaurantId,))
+        rest_row = cursor.fetchone()
+        if not rest_row:
+            return HTMLResponse(content="<h1>Restaurant not found</h1>")
+            
+        restaurant = dict(rest_row)
+        
+        cursor.execute("UPDATE ngo_requests SET status = 'Accepted', restaurant_assigned = ? WHERE id = ?", (restaurant['name'], requestId))
+        conn.commit()
+        
+        # Email NGO that it was accepted
+        email_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
+            <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 3px solid #16a34a;">
+                <h1 style="color: #16a34a; margin: 0;">🍲 SURA Connect</h1>
+                <p style="margin: 5px 0 0; color: #64748b;">Good News!</p>
+            </div>
+            
+            <div style="padding: 30px;">
+                <h2 style="margin-top: 0; color: #0f172a;">Your Request was Accepted!</h2>
+                <p>Hello {req['ngo_name']},</p>
+                <p>The restaurant <strong>{restaurant['name']}</strong> has stepped up to fulfill your recent food request.</p>
+                
+                <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #16a34a;">Your Request Details</h3>
+                    <p><strong>Food:</strong> {req['food_type_needed']} ({req['quantity_needed']} meals)</p>
+                    <hr style="border: none; border-top: 1px solid #cbd5e1; margin: 10px 0;"/>
+                    <h3 style="margin-top: 0; color: #0f172a;">Catering / Restaurant Contact Info</h3>
+                    <p><strong>Restaurant:</strong> {restaurant['name']}</p>
+                    <p><strong>Phone:</strong> {restaurant['contact']}</p>
+                    <p><strong>Email:</strong> {restaurant['email']}</p>
+                </div>
+                
+                <p>Please contact them immediately to coordinate the pickup.</p>
+            </div>
+        </body>
+        </html>
+        """
+        background_tasks.add_task(send_real_email, req["ngo_email"], f"Fulfilled! Restaurant {restaurant['name']} accepted your request", email_html)
+        
+        log_event(requestId, f"Request ACCEPTED by Restaurant {restaurant['name']}.", conn, table="ngo_requests")
+        msg = f"Successfully accepted request from {req['ngo_name']}."
+        
+    conn.close()
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Response Recorded</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f3f4f6; margin: 0; }}
+            .card {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }}
+            h1 {{ color: #111827; font-size: 24px; margin-bottom: 10px; }}
+            p {{ color: #4b5563; line-height: 1.5; }}
+            .btn {{ margin-top: 20px; display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>Action Recorded Successfully!</h1>
+            <p>{msg}</p>
+            <p>You can now safely close this window.</p>
+            <a href="{base_url}" class="btn">View Live Dashboard</a>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @app.get("/api/respond")
 def handle_response(decision: str, requestId: int, request: Request, background_tasks: BackgroundTasks):

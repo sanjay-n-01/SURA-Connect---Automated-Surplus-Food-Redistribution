@@ -3,16 +3,17 @@
 SURA Connect is a web application designed to combat food waste by intelligently routing surplus food from restaurants to nearby NGOs exactly when they need it most.
 
 ## 🚀 Features
-- **Restaurant Portal**: A secure portal for restaurants to log in, specify the type and quantity of their surplus food, and request a pickup.
-- **Intelligent Routing**: The backend automatically assigns the food donation to the most optimal NGO based on location.
+- **Restaurant Portal**: A secure portal for restaurants to specify the type and quantity of their surplus food, and request a pickup.
+- **NGO Portal**: A secure portal for NGOs to log in, view live food donation requests in their area, and accept or decline pickups. NGOs can also make bulk food requests that are broadcasted to all local restaurants.
+- **Intelligent Routing**: The backend automatically assigns the food donation to the most optimal NGO based on location, and falls back to other NGOs if declined.
 - **Automated Email Notifications**: Real-time email alerts are sent to NGOs to request a pickup, and confirmation emails are sent back to the restaurant containing the NGO's contact details once accepted.
 - **Secure Authentication**: Uses SHA-256 salted hashing for secure password storage.
 
 ## 🛠️ Tech Stack
-- **Frontend**: HTML5, CSS3 (Tailwind-inspired styling), Vanilla JavaScript / React via CDN
+- **Frontend**: HTML5, React via CDN, TailwindCSS
 - **Backend**: Python, FastAPI
-- **Database**: SQLite
-- **Authentication**: `passlib` & `bcrypt`
+- **Database**: SQLite (Auto-generated on startup)
+- **Authentication**: Native Python `hashlib`
 
 ## 🏃‍♂️ How to Run Locally
 
@@ -38,18 +39,20 @@ SURA Connect is a web application designed to combat food waste by intelligently
    - `SENDER_PASSWORD`: Your 16-character Google App Password.
 
 4. **Start the Server:**
+   You can start the backend easily using the provided batch file:
    ```bash
-   python -m uvicorn main:app --port 8006
+   run_server.bat
    ```
+   *Alternatively, run: `python -m uvicorn main:app --reload`*
 
 5. **Open the App:**
-   Navigate your browser to: `http://127.0.0.1:8006`
+   Navigate your browser to: `http://localhost:8000`
 
 6. **PUBLIC LINK**
-   Hosted it live on Render:https://sura-connect-automated-surplus-food.onrender.com
+   Hosted it live on Render: https://sura-connect-automated-surplus-food.onrender.com
 
 ## 🔐 Built With Security in Mind
-The project uses `passlib` context to securely encrypt user passwords before they ever touch the SQLite database.
+The project uses `hashlib.pbkdf2_hmac` with dynamic salts to securely encrypt user passwords before they ever touch the SQLite database.
 
 ## 🤝 Contributing
 Contributions, issues, and feature requests are welcome!

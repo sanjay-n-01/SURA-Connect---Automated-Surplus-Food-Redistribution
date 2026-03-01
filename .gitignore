@@ -15,3 +15,14 @@ ENV/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Project-specific Test & Temp Files
+check_syntax.py
+extract.py
+parse.py
+parsed_output.txt
+test-babel.html
+temp.jsx
+babel.js
+*.blueprint.json
+.vscode/
