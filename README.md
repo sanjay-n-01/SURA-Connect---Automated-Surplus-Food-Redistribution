@@ -48,8 +48,6 @@ SURA Connect is a web application designed to combat food waste by intelligently
 5. **Open the App:**
    Navigate your browser to: `http://localhost:8000`
 
-6. **PUBLIC LINK**
-   Hosted it live on Render: https://sura-connect-automated-surplus-food.onrender.com
 
 ## 🔐 Built With Security in Mind
 The project uses `hashlib.pbkdf2_hmac` with dynamic salts to securely encrypt user passwords before they ever touch the SQLite database.

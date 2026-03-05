@@ -184,25 +184,73 @@
 
     const NGOApp = ({ user, onLogout }) => {
       const [requests, setRequests] = useState([]);
+      const [myRequests, setMyRequests] = useState([]);
       const [loading, setLoading] = useState(false);
 
+      const [form, setForm] = useState({
+        ngo_name: user?.name || '',
+        ngo_email: user?.email || '',
+        location: user?.location || '',
+        food_type_needed: '',
+        quantity_needed: 50,
+        urgency: 'High'
+      });
+
       const fetchRequests = async () => {
-        const res = await fetch('/api/donations');
-        const data = await res.json();
-        // Filter requests relevant to this NGO (e.g., assigned to them or all if admin)
-        setRequests(data.filter(req => req.ngoAssigned === user.name || user.name === 'Admin')); // Assuming 'Admin' can see all
+        try {
+          const res = await fetch('/api/donations');
+          const data = await res.json();
+          setRequests(data.filter(req => req.ngoAssigned === user.name || user.name === 'Admin'));
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      const fetchMyRequests = async () => {
+        try {
+          const res = await fetch('/api/ngo-requests');
+          if (res.ok) {
+            const data = await res.json();
+            setMyRequests(data.filter(req => req.ngo_name === user.name));
+          }
+        } catch (e) {
+          console.error(e);
+        }
       };
 
       useEffect(() => {
-        fetchRequests();
-      }, []);
+        if (user) {
+          fetchRequests();
+          fetchMyRequests();
+        }
+      }, [user]);
 
       const handleDecision = async (reqId, decision) => {
         try {
           await fetch(`/api/respond?decision=${decision}&requestId=${reqId}`);
-          fetchRequests(); // Refresh list to show change
+          fetchRequests();
         } catch (e) {
           console.error(e);
+        }
+      };
+
+      const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+      const handleRequestSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+          await fetch('/api/ngo-requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form)
+          });
+          setForm({ ...form, food_type_needed: '', quantity_needed: 50, urgency: 'High' });
+          fetchMyRequests();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setLoading(false);
         }
       };
 
@@ -221,70 +269,149 @@
             </div>
           </header>
 
-          <h2 className="text-2xl font-semibold text-white border-b border-gray-700 pb-3 mb-6">
-            Incoming Donation Requests
-          </h2>
-
-          {requests.length === 0 ? (
-            <div className="glass rounded-2xl p-10 text-center text-gray-400 flex flex-col items-center justify-center min-h-[400px]">
-              <div className="text-6xl mb-6 opacity-50">
-                📦
-              </div>
-              <h3 className="text-2xl font-semibold mb-2 text-white">
-                No New Requests
-              </h3>
-              <p className="max-w-md mx-auto">
-                There are no pending food donation requests assigned to your NGO at the moment.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {requests.map((req) => (
-                <div key={req.id} className="glass rounded-2xl p-5 relative overflow-hidden flex flex-col sm:flex-row gap-6">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xl font-bold text-white">{req.restaurant}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${req.status.includes('Accepted') ? 'bg-green-900 text-primary' :
-                        req.status.includes('Declined') ? 'bg-red-900 text-red-400' :
-                          'bg-yellow-900 text-yellow-500'
-                        }`}>
-                        {req.status}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-300 mb-4">
-                      📍 {req.location} &nbsp; • &nbsp; 🍲 {req.foodType} ({req.quantity} meals)
-                    </p>
-                    <p className="text-sm text-gray-300 mb-4">
-                      📞 Contact: {req.contact} &nbsp; • &nbsp; 📧 Email: {req.email}
-                    </p>
-                    <p className="text-sm text-gray-300 mb-4">
-                      ⏰ Expiry: {req.expiry}
-                    </p>
-                    <p className="text-sm text-gray-300 mb-4">
-                      📝 Notes: {req.notes}
-                    </p>
-
-                    {req.status === 'Waiting for Response' && (
-                      <div className="mt-4 flex gap-3">
-                        <button
-                          onClick={() => handleDecision(req.id, 'accept')}
-                          className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex-1"
-                        >
-                          ✅ Accept Pickup
-                        </button>
-                        <button
-                          onClick={() => handleDecision(req.id, 'decline')}
-                          className="bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex-1"
-                        >
-                          ❌ Decline
-                        </button>
-                      </div>
-                    )}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Left Col: Request Form */}
+            <div className="lg:col-span-4">
+              <div className="glass rounded-3xl p-8 sticky top-8">
+                <h2 className="text-2xl font-bold text-white mb-6 border-b border-gray-700 pb-4">
+                  Request Food
+                </h2>
+                <form onSubmit={handleRequestSubmit} className="space-y-5">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Food Type Needed</label>
+                    <input required name="food_type_needed" value={form.food_type_needed} onChange={handleChange}
+                      className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-blue-500 transition" placeholder="e.g. Rice, Bread, Veg Meals" />
                   </div>
-                </div>
-              ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Quantity (Meals)</label>
+                      <input required type="number" name="quantity_needed" value={form.quantity_needed} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-blue-500 transition" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Urgency</label>
+                      <select name="urgency" value={form.urgency} onChange={handleChange}
+                        className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-blue-500 transition cursor-pointer">
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Critical">Critical</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button disabled={loading} type="submit"
+                    className="w-full mt-4 bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transform transition active:scale-95 disabled:opacity-50">
+                    {loading ? 'Submitting...' : 'Broadcast Request 🚀'}
+                  </button>
+                </form>
+              </div>
             </div>
-          )}
+
+            {/* Right Col: Dashboard & Logs */}
+            <div className="lg:col-span-8 flex flex-col gap-8">
+
+              {/* Incoming Donations */}
+              <div>
+                <h2 className="text-2xl font-semibold text-white border-b border-gray-700 pb-3 mb-6">
+                  Incoming Donation Requests
+                </h2>
+
+                {requests.length === 0 ? (
+                  <div className="glass rounded-2xl p-10 text-center text-gray-400 flex flex-col items-center justify-center min-h-[200px]">
+                    <div className="text-5xl mb-4 opacity-50">📦</div>
+                    <h3 className="text-xl font-semibold mb-2 text-white">No New Requests</h3>
+                    <p className="max-w-md mx-auto text-sm">There are no pending food donation requests assigned to your NGO at the moment.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {requests.map((req) => (
+                      <div key={req.id} className="glass rounded-2xl p-5 relative overflow-hidden flex flex-col sm:flex-row gap-6">
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-xl font-bold text-white">{req.restaurant}</h3>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${req.status.includes('Accepted') ? 'bg-green-900 text-green-400' :
+                              req.status.includes('Declined') ? 'bg-red-900 text-red-400' :
+                                'bg-yellow-900 text-yellow-500'
+                              }`}>
+                              {req.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-300 mb-2">
+                            📍 {req.location} &nbsp; • &nbsp; 🍲 {req.foodType} ({req.quantity} meals)
+                          </p>
+                          <p className="text-sm text-gray-300 mb-2">
+                            📞 Contact: {req.contact} &nbsp; • &nbsp; 📧 Email: {req.email}
+                          </p>
+                          <p className="text-sm text-gray-300 mb-2">
+                            ⏰ Expiry: {req.expiry}
+                          </p>
+                          {req.notes && <p className="text-sm text-gray-300 mb-2">📝 Notes: {req.notes}</p>}
+
+                          {req.status === 'Waiting for Response' && (
+                            <div className="mt-4 flex gap-3">
+                              <button
+                                onClick={() => handleDecision(req.id, 'accept')}
+                                className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex-1"
+                              >
+                                ✅ Accept Pickup
+                              </button>
+                              <button
+                                onClick={() => handleDecision(req.id, 'decline')}
+                                className="bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex-1"
+                              >
+                                ❌ Decline
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Sent Requests History */}
+              <div>
+                <h2 className="text-2xl font-semibold text-white border-b border-gray-700 pb-3 mb-6">
+                  Your Broadcasted Food Requests
+                </h2>
+
+                {myRequests.length === 0 ? (
+                  <div className="glass rounded-2xl p-6 text-center text-gray-400 flex flex-col items-center justify-center min-h-[150px]">
+                    <h3 className="text-lg font-semibold text-white">No requests broadcasted</h3>
+                    <p className="text-sm">Use the form on the left to request food from nearby restaurants.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {myRequests.map((req) => (
+                      <div key={req.id} className="glass rounded-xl p-4 border-l-4 border-blue-500 relative overflow-hidden">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-lg font-bold text-white">Needed: {req.food_type_needed}</h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${req.status === 'Accepted' ? 'bg-green-900 text-green-400' : 'bg-blue-900 text-blue-400'}`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300">
+                          {req.quantity_needed} meals &nbsp; • &nbsp; Urgency: <span className={req.urgency === 'Critical' ? 'text-red-400 font-bold' : 'text-gray-300'}>{req.urgency}</span>
+                        </p>
+                        {req.restaurant_assigned !== 'Not yet Assigned' && (
+                          <div className="mt-3 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
+                            <p className="text-sm text-green-400 font-semibold mb-1">
+                              ✅ Fulfilled by: {req.restaurant_assigned}
+                            </p>
+                            <p className="text-xs text-green-300/80">
+                              They have accepted your request! They will reach out to you or you can expect the food soon.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
         </div>
       );
     };
@@ -378,6 +505,10 @@
             <AuthForms onLogin={(userObj) => { setUser(userObj); localStorage.setItem('user', JSON.stringify(userObj)); }} />
           </div>
         );
+      }
+
+      if (user?.role === 'ngo') {
+        return <NGOApp user={user} onLogout={handleLogout} />;
       }
 
       // Filter requests to only show the CURRENT logged in restaurant's requests (or all if admin)

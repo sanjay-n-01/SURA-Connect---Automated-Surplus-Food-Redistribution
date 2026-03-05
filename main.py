@@ -87,7 +87,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("DROP TABLE IF EXISTS restaurants")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS restaurants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -559,8 +558,31 @@ def fulfill_ngo_request(decision: str, requestId: int, restaurantId: int, reques
         cursor.execute("UPDATE ngo_requests SET status = 'Accepted', restaurant_assigned = ? WHERE id = ?", (restaurant['name'], requestId))
         conn.commit()
         
+        # Notify other restaurants in the same location that the request is fulfilled
+        cursor.execute("SELECT name, email FROM restaurants WHERE location = ? AND id != ?", (req['location'], restaurantId))
+        other_restaurants = cursor.fetchall()
+        for or_row in other_restaurants:
+            other_restaurant = dict(or_row)
+            cancel_email_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
+                <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 3px solid #64748b;">
+                    <h1 style="color: #64748b; margin: 0;">🍲 SURA Connect</h1>
+                    <p style="margin: 5px 0 0; color: #94a3b8;">Request Fulfilled</p>
+                </div>
+                <div style="padding: 30px;">
+                    <h2 style="margin-top: 0; color: #0f172a;">Food Request Fulfilled</h2>
+                    <p>Hello {other_restaurant['name']},</p>
+                    <p>The food request from <strong>{req['ngo_name']}</strong> in your area has just been fulfilled by another provider.</p>
+                    <p>Thank you for your willingness to help! We will notify you of any new requests in your location.</p>
+                </div>
+            </body>
+            </html>
+            """
+            background_tasks.add_task(send_real_email, other_restaurant['email'], f"Update: NGO Request Fulfilled by another provider", cancel_email_html)
+        
         # Email NGO that it was accepted
-        email_html = f"""
+        ngo_email_html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
             <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 3px solid #16a34a;">
@@ -588,7 +610,7 @@ def fulfill_ngo_request(decision: str, requestId: int, restaurantId: int, reques
         </body>
         </html>
         """
-        background_tasks.add_task(send_real_email, req["ngo_email"], f"Fulfilled! Restaurant {restaurant['name']} accepted your request", email_html)
+        background_tasks.add_task(send_real_email, req["ngo_email"], f"Fulfilled! Restaurant {restaurant['name']} accepted your request", ngo_email_html)
         
         log_event(requestId, f"Request ACCEPTED by Restaurant {restaurant['name']}.", conn, table="ngo_requests")
         msg = f"Successfully accepted request from {req['ngo_name']}."

@@ -26,3 +26,4 @@ temp.jsx
 babel.js
 *.blueprint.json
 .vscode/
+.pyre_configuration
